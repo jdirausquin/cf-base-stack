@@ -1,0 +1,196 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VPC stack
+Parameters:
+  Cidr16octec:
+    Description: The VPC CIDR Block - (e.g. 10.10.0.0/16)
+    Type: String
+  availabilityZones:
+    Description: Comma Seperated list of 2 Availaibity Zones
+    Type: CommaDelimitedList
+    Default: us-west-2a, us-west-2b
+  CommonName:
+    Description: Common Name for this Stack
+    Type: String
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Fn::Join:
+        - ''
+        - - Ref: Cidr16octec
+          - ".0.0/16"
+      InstanceTenancy: default
+      EnableDnsSupport: true
+      EnableDnsHostnames: false
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+  # Public subnets
+  PubSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select: ['0', Ref: availabilityZones]
+      VpcId: !Ref 'VPC'
+      CidrBlock:
+        Fn::Join: ['', [Ref: Cidr16octec, '.1.0/24']]
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: 
+          Fn::Join: ['', ['sn_', Ref: CommonName, '-pub-uw2a']]
+  PubSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select: ['1', Ref: availabilityZones]
+      VpcId: !Ref 'VPC'
+      CidrBlock:
+        Fn::Join: ['', [Ref: Cidr16octec, '.2.0/24']]
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - Key: Name
+        Value: 
+          Fn::Join: ['', ['sn_', Ref: CommonName, '-pub-uw2b']]
+  # Private subnets
+  PriSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select: ['0', Ref: availabilityZones]
+      VpcId: !Ref 'VPC'
+      CidrBlock:
+        Fn::Join: ['', [Ref: Cidr16octec, '.101.0/24']]
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - Key: Name
+        Value:
+          Fn::Join: ['', ['sn_', Ref: CommonName, '-pri-uw2a']]
+  PriSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select: ['1', Ref: availabilityZones]
+      VpcId: !Ref 'VPC'
+      CidrBlock:
+        Fn::Join: ['', [Ref: Cidr16octec, '.102.0/24']]
+      MapPublicIpOnLaunch: false
+      Tags: 
+      - Key: Name
+        Value:
+          Fn::Join: ['', ['sn_', Ref: CommonName, '-pri-uw2b']]
+  # Internet Gateway for Public Subnets
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join: ['', ['igw_', Ref: CommonName]]
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  # Nat Gateway for Private Subnets
+  NatGateway:
+    DependsOn: GatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIP
+        - AllocationId
+      SubnetId:
+        Ref: PubSubnetA
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join: ['', ['nat_', Ref: CommonName]]
+  # Elastic IP for Nat GW
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  ### Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags: 
+      - Key: Name
+        Value: 
+          Fn::Join: ['', ['rt_', Ref: CommonName, '-pub']]
+  # Public route
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+  # Route Association to RTA
+  PubRouteTableAssocA:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      RouteTableId: !Ref 'PublicRouteTable'
+      SubnetId: !Ref 'PubSubnetA'
+  # Route Association to RTA
+  PubRouteTableAssocAB:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      RouteTableId: !Ref 'PublicRouteTable'
+      SubnetId: !Ref 'PubSubnetB'
+  ### Private Route Table 
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags: 
+      - Key: Name
+        Value: 
+          Fn::Join: ['', ['rt_', Ref: CommonName, '-pri']]
+  # Private route
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NatGateway'
+    # Route Association to RTA
+  PriRouteA:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      RouteTableId: !Ref 'PrivateRouteTable'
+      SubnetId: !Ref 'PriSubnetA'
+  # Route Association to RTB
+  PriRouteB:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      RouteTableId: !Ref 'PrivateRouteTable'
+      SubnetId: !Ref 'PriSubnetB'
+Outputs:
+  vpcId:
+    Description: VPC
+    Value:
+      Ref: VPC
+  SubnetPublicA:
+    Description: Public Subnet AZ-A
+    Value:
+      Ref: PubSubnetA
+  SubnetPublicB:
+    Description: Public Subnet AZ-B
+    Value:
+      Ref: PubSubnetB
+  SubnetPrivateA:
+    Description: Private Subnet AZ-A
+    Value:
+      Ref: PriSubnetA
+  SubnetPrivateB:
+    Description: Private Subnet AZ-B
+    Value:
+      Ref: PriSubnetB

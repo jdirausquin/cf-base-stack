@@ -1,0 +1,23 @@
+{
+  "Tags": [
+  ],
+  "Parameters": [
+    {
+      "ParameterKey": "Cidr16octec",
+      "ParameterValue": "172.16"
+    },
+    {
+      "ParameterKey": "availabilityZones",
+      "ParameterValue": "us-west-2a, us-west-2b"
+    },
+    {
+        "ParameterKey": "CommonName",
+        "ParameterValue": "devops"
+    }
+  ],
+  "DisableRollback": false,
+  "TimeoutInMinutes": 20,
+  "Capabilities": [
+    "CAPABILITY_IAM"
+  ]
+}
